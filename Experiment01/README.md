@@ -1,10 +1,171 @@
 # EXPERIMENT 01:GPU BASED VECTOR SUMMARIZATION 
-i) Using the program sumArraysOnGPU-timer.cu, set the block.x = 1023. Recompile and run it. Compare the result with the execution configuration of block.x = 1024. Try to explain the difference and the reason.
-ii) Refer to sumArraysOnGPU-timer.cu, and let block.x = 256. Make a new kernel to let each thread handle two elements. Compare the results with other execution confi gurations.
+i) Using the program sumArraysOnGPU-timer.cu, set the block.x = 1023. Recompile and run it. Compare the result with the execution configuration of block.x = 1024. Try to explain the difference and the reason.  
+ii) Refer to sumArraysOnGPU-timer.cu, and let block.x = 256. Make a new kernel to let each thread handle two elements. Compare the results with other execution confi gurations.  
 ## AIM:
-To explore the differences between the execi
+To explore the differences between the execution configurations of GPU base vector summation.
 ## PROCEDURE:
+1. Initialize CUDA device, allocate host memory, and set data size (`nElem`).
+2. Generate random data for `h_A` and `h_B` using `initialData`.
+3. Compute vector addition sequentially on the CPU using `sumArraysOnHost`, storing the result in `hostRef`.
+4. Allocate device memory (`d_A`, `d_B`, and `d_C`), transfer data, launch GPU kernel `sumArraysOnGPU`, and synchronize the GPU.
+5. Check for GPU kernel errors using `cudaGetLastError` and transfer the GPU result back to the host.
+6. Compare CPU and GPU results using `checkResult` and print whether they match.
+7. Free device global memory with `cudaFree` and free host memory allocated with `malloc` before concluding the program.
 
+## PROGRAM:
+``` cuda
+#include "../common/common.h"
+#include <cuda_runtime.h>
+#include <stdio.h>
+
+/*
+ * This example demonstrates a simple vector sum on the GPU and on the host.
+ * sumArraysOnGPU splits the work of the vector sum across CUDA threads on the
+ * GPU. Only a single thread block is used in this small case, for simplicity.
+ * sumArraysOnHost sequentially iterates through vector elements on the host.
+ * This version of sumArrays adds host timers to measure GPU and CPU
+ * performance.
+ */
+
+void checkResult(float *hostRef, float *gpuRef, const int N)
+{
+    double epsilon = 1.0E-8;
+    bool match = 1;
+
+    for (int i = 0; i < N; i++)
+    {
+        if (abs(hostRef[i] - gpuRef[i]) > epsilon)
+        {
+            match = 0;
+            printf("Arrays do not match!\n");
+            printf("host %5.2f gpu %5.2f at current %d\n", hostRef[i],
+                   gpuRef[i], i);
+            break;
+        }
+    }
+
+    if (match) printf("Arrays match.\n\n");
+
+    return;
+}
+
+void initialData(float *ip, int size)
+{
+    // generate different seed for random number
+    time_t t;
+    srand((unsigned) time(&t));
+
+    for (int i = 0; i < size; i++)
+    {
+        ip[i] = (float)( rand() & 0xFF ) / 10.0f;
+    }
+
+    return;
+}
+
+void sumArraysOnHost(float *A, float *B, float *C, const int N)
+{
+    for (int idx = 0; idx < N; idx++)
+    {
+        C[idx] = A[idx] + B[idx];
+    }
+}
+__global__ void sumArraysOnGPU(float *A, float *B, float *C, const int N)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < N) C[i] = A[i] + B[i];
+}
+
+int main(int argc, char **argv)
+{
+    printf("%s Starting...\n", argv[0]);
+
+    // set up device
+    int dev = 0;
+    cudaDeviceProp deviceProp;
+    CHECK(cudaGetDeviceProperties(&deviceProp, dev));
+    printf("Using Device %d: %s\n", dev, deviceProp.name);
+    CHECK(cudaSetDevice(dev));
+
+    // set up data size of vectors
+    int nElem = 1 << 24;
+    printf("Vector size %d\n", nElem);
+
+    // malloc host memory
+    size_t nBytes = nElem * sizeof(float);
+
+    float *h_A, *h_B, *hostRef, *gpuRef;
+    h_A     = (float *)malloc(nBytes);
+    h_B     = (float *)malloc(nBytes);
+    hostRef = (float *)malloc(nBytes);
+    gpuRef  = (float *)malloc(nBytes);
+
+    double iStart, iElaps;
+
+    // initialize data at host side
+    iStart = seconds();
+    initialData(h_A, nElem);
+    initialData(h_B, nElem);
+    iElaps = seconds() - iStart;
+    printf("initialData Time elapsed %f sec\n", iElaps);
+    memset(hostRef, 0, nBytes);
+    memset(gpuRef,  0, nBytes);
+
+    // add vector at host side for result checks
+    iStart = seconds();
+    sumArraysOnHost(h_A, h_B, hostRef, nElem);
+    iElaps = seconds() - iStart;
+    printf("sumArraysOnHost Time elapsed %f sec\n", iElaps);
+
+    // malloc device global memory
+    float *d_A, *d_B, *d_C;
+    CHECK(cudaMalloc((float**)&d_A, nBytes));
+    CHECK(cudaMalloc((float**)&d_B, nBytes));
+    CHECK(cudaMalloc((float**)&d_C, nBytes));
+
+    // transfer data from host to device
+    CHECK(cudaMemcpy(d_A, h_A, nBytes, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(d_B, h_B, nBytes, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(d_C, gpuRef, nBytes, cudaMemcpyHostToDevice));
+
+    // invoke kernel at host side
+    int iLen = 512;
+    dim3 block (iLen);
+    dim3 grid  ((nElem + block.x - 1) / block.x);
+
+    iStart = seconds();
+    sumArraysOnGPU<<<grid, block>>>(d_A, d_B, d_C, nElem);
+    CHECK(cudaDeviceSynchronize());
+    iElaps = seconds() - iStart;
+    printf("sumArraysOnGPU <<<  %d, %d  >>>  Time elapsed %f sec\n", grid.x,
+           block.x, iElaps);
+
+    // check kernel error
+    CHECK(cudaGetLastError()) ;
+
+    // copy kernel result back to host side
+    CHECK(cudaMemcpy(gpuRef, d_C, nBytes, cudaMemcpyDeviceToHost));
+
+    // check device results
+    checkResult(hostRef, gpuRef, nElem);
+
+    // free device global memory
+    CHECK(cudaFree(d_A));
+    CHECK(cudaFree(d_B));
+    CHECK(cudaFree(d_C));
+
+    // free host memory
+    free(h_A);
+    free(h_B);
+    free(hostRef);
+    free(gpuRef);
+
+    return(0);
+}
+
+```
 ## OUTPUT:
-
+![Output](https://github.com/Rithigasri/Parallel-Computing-Architecture/assets/93427256/56ae4fa4-6e86-4331-bdb2-a9ab5cf99236)
 ## RESULT:
+The block size with 512 performs better in the GPU with an elapsed time of 0.019 seconds whereas the block size 1023 performed the operation in 0.02 seconds.Thus, the difference between the execution configurations of PCA-GPU-based vector summation had been explored successfully.
