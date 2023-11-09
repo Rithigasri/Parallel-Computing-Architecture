@@ -17,6 +17,8 @@ To perform matrix multiplication using CUDA and compare the performance of the C
 
 ## PROGRAM:
 ```cuda
+
+## DEVELOPED BY:RITHIGA SRI.B [212221230083]
 %%cu
 #include <stdio.h>
 #include <assert.h>
