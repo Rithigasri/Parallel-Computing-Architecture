@@ -1,8 +1,8 @@
 # EXPERIMENT 06:CUDA MATRIX TRANSPOSITION
-## Aim:
+## AIM:
 To compare the performance of different matrix transposition implementations using CUDA.
 
-## Procedure:
+## PROCEDURE:
 1. Set up device properties and allocate host and device memory for the matrices.
 2. Initialize host matrix with random values and transpose it as the reference.
 3. Choose a transpose kernel based on the specified kernel index and block sizes.
@@ -11,7 +11,7 @@ To compare the performance of different matrix transposition implementations usi
 6. Calculate the effective bandwidth of the operation.
 7. Check and print the results if the chosen kernel involves data transposition.
 
-## Program:
+## PROGRAM:
 ```cuda
 
 %%cu
