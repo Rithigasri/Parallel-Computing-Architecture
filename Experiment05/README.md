@@ -1,4 +1,4 @@
-# EXPERIMENT 05: MATRIX MULTIPLICATION ON USING CUDA AND HOSTMatrix Multiplication on Host and GPU
+# EXPERIMENT 05: MATRIX MULTIPLICATION USING CUDA AND HOST
 
 ## AIM:
 
@@ -17,6 +17,8 @@ To perform matrix multiplication using CUDA and compare the performance of the C
 
 ## PROGRAM:
 ```cuda
+
+## DEVELOPED BY:RITHIGA SRI.B [212221230083]
 %%cu
 #include <stdio.h>
 #include <assert.h>
